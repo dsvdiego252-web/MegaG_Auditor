@@ -1,0 +1,41 @@
+name: Verificar aplicação
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: teste-ci-descartavel
+          POSTGRES_USER: mega_test
+          POSTGRES_DB: mega_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mega_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://mega_test:teste-ci-descartavel@localhost:5432/mega_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: node scripts/integration-http.mjs
+      - name: Bloquear dados fiscais e segredos no repositório
+        run: node scripts/check-repository.mjs

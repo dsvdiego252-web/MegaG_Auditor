@@ -1,0 +1,25 @@
+'use client';
+import {useEffect,useRef,type ReactNode} from 'react';
+import {ChevronRight,FileSpreadsheet,TriangleAlert,X,type LucideIcon} from 'lucide-react';
+import type {AppData,Alert,EvaluatedEntry} from '@/lib/types';
+import {categoryLabels,money} from '@/lib/format';
+export const colors={tributada:'#278574',isenta:'#92cbbf',st:'#6d8dba',outras:'#bec8d4',revisar:'#dfb65d'};
+export type Page='dashboard'|'imports'|'audit'|'credits'|'transfers'|'companies'|'rules';
+export type ViewProps={data:AppData;company:string;period:string;onPage:(p:Page)=>void;onEntry:(e:EvaluatedEntry)=>void;refresh:()=>Promise<void>;notify:(s:string)=>void;perform:(fn:()=>Promise<void>)=>Promise<void>;busy:boolean};
+export async function request(path:string,body?:unknown) {
+ const res=await fetch('/api/'+path,{method:body?'POST':'GET',...(body?body instanceof FormData?{body}:{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
+ const data=await res.json();if(!res.ok)throw Object.assign(new Error(data.error||'Não foi possível concluir.'),{status:res.status});return data;
+}
+export function Badge({children,tone='neutral'}:{children:ReactNode;tone?:string}){return <span className={'badge '+tone}>{children}</span>;}
+export function Empty({title,children,action}:{title:string;children:ReactNode;action?:ReactNode}){return <div className="empty"><span className="empty-icon"><FileSpreadsheet size={30}/></span><h3>{title}</h3><p>{children}</p>{action}</div>;}
+export function Dialog({title,children,onClose,wide=false}:{title:string;children:ReactNode;onClose:()=>void;wide?:boolean}) {
+ const ref=useRef<HTMLDialogElement>(null);useEffect(()=>{const el=ref.current;el?.showModal();return()=>el?.close();},[]);
+ return <dialog ref={ref} className={wide?'wide':''} onCancel={onClose} onClick={e=>{if(e.target===e.currentTarget)onClose();}}><div className="dialog-head"><h2>{title}</h2><button className="icon-button" aria-label="Fechar" onClick={onClose}><X size={20}/></button></div>{children}</dialog>;
+}
+export function Kpi({title,value,caption,icon:Icon,accent=false}:{title:string;value:string;caption:string;icon:LucideIcon;accent?:boolean}){return <article className={'kpi '+(accent?'accent':'')}><div className="kpi-label">{title}<Icon size={18}/></div><strong>{value}</strong><span>{caption}</span></article>;}
+export function EntryTable({entries,data,onEntry,limit=100}:{entries:EvaluatedEntry[];data:AppData;onEntry:(e:EvaluatedEntry)=>void;limit?:number}) {
+ return <div className="table-scroll"><table><thead><tr><th>CFOP / origem</th><th>Empresa</th><th>Valor contábil</th><th>ICMS informado</th><th>Classificação</th><th>Status</th><th aria-label="Detalhar"/></tr></thead><tbody>{entries.slice(0,limit).map(e=><tr key={e.id}><td><button className="table-link" onClick={()=>onEntry(e)}>{e.cfop}</button><small>{e.direction==='entrada'?'Entrada':'Saída'} · linha {e.line}</small></td><td>{(data.snapshot?.companies||data.companies).find(c=>c.id===e.companyId)?.name.replace(' · Exemplo','')}</td><td className="numeric">{money(e.amount)}</td><td className="numeric">{money(e.tax)}{!e.taxConfirmed&&<small>Débito a confirmar</small>}</td><td><span className="category-dot" style={{background:colors[e.category]}}/>{categoryLabels[e.category]}</td><td><Badge tone={e.status==='Conferido'?'green':'amber'}>{e.status}</Badge></td><td><button className="icon-button" aria-label={'Detalhar CFOP '+e.cfop} onClick={()=>onEntry(e)}><ChevronRight size={18}/></button></td></tr>)}</tbody></table>{!entries.length&&<p className="table-empty">Nenhum lançamento neste filtro.</p>}{entries.length>limit&&<div className="table-foot">Exibindo {limit} de {entries.length}. Refine a busca ou exporte todas as linhas para Excel.</div>}</div>;
+}
+export function AlertList({alerts,data,onEntry}:{alerts:Alert[];data:AppData;onEntry:(e:EvaluatedEntry)=>void}) {
+ return <div className="alert-list">{alerts.slice(0,100).map(a=><article className="alert-row" key={a.id}><span className={'alert-mark '+a.priority}><TriangleAlert size={19}/></span><div className="alert-copy"><div><b>{a.title}</b><Badge tone={a.priority==='alta'?'red':'amber'}>{a.priority==='alta'?'Alta prioridade':'Revisar'}</Badge></div><p>{a.reason}</p><small>{data.companies.find(c=>c.id===a.companyId)?.name||'Grupo'}</small></div>{a.entryId&&<button className="button text-button" onClick={()=>{const e=data.snapshot?.entries.find(e=>e.id===a.entryId);if(e)onEntry(e);}}>Ver origem <ChevronRight size={16}/></button>}</article>)}{!alerts.length&&<Empty title="Nenhum alerta neste filtro">A ausência de alertas depende da cobertura dos arquivos e dos critérios cadastrados.</Empty>}{alerts.length>100&&<p className="table-foot">Exibindo 100 de {alerts.length} alertas. Refine o filtro ou exporte a lista completa.</p>}</div>;
+}

@@ -1,0 +1,19 @@
+# Relatórios fiscais: nunca versionar dados ou exportações reais.
+/ICMS/
+/EFD-Contribuições/
+/.data/
+/exports/
+/uploads/
+/.env*
+!.env.example
+/ACESSO-LOCAL.txt
+node_modules/
+.next/
+.vercel/
+coverage/
+*.log
+*.tsbuildinfo
+*.db
+*.sqlite*
+
+/.pnpm-store/
