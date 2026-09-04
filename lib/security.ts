@@ -16,7 +16,13 @@ export async function requireAuth(req:Request) {
   return process.env.ADMIN_EMAIL||'admin';
 }
 export async function login(email:string,password:string) {
-  if(!process.env.ADMIN_PASSWORD_HASH||!process.env.DATA_ENCRYPTION_KEY) throw new HttpError('Acesso não configurado. Execute pnpm run setup localmente ou configure as variáveis na Vercel.',503);
+  const missing=['ADMIN_PASSWORD_HASH','DATA_ENCRYPTION_KEY'].filter(name=>!process.env[name]?.trim());
+  if(missing.length) {
+    const instruction=process.env.VERCEL
+      ? 'Preencha essas variáveis no ambiente Production da Vercel, salve e faça um novo deploy.'
+      : 'Configure essas variáveis no .env.local e reinicie o servidor.';
+    throw new HttpError('Acesso não configurado: '+missing.join(', ')+'. '+instruction,503);
+  }
   const db=await database();
   return db.transaction(async tx=>{
     await tx.query("INSERT INTO mega_login_limit(id,failures,reset_at) VALUES ('admin',0,now()+interval '15 minutes') ON CONFLICT DO NOTHING");
