@@ -18,10 +18,11 @@ export type Rule = {
   pairedCfops?:string[];
 };
 export type Alert = { id: string; entryId?: string; companyId?: string; priority: Priority; title: string; reason: string; amount?: number; kind: string };
-export type TransferCfop = {id:string;companyId:string;cfop:string;direction:Direction;amount:number;tax:number;entryIds:string[];status:'Conferido'|'Revisar';description:string;reasons:string[];reference:string};
+export type UfCheck={status:'Pendente'|'Conferido'|'Divergente';reason:string};
+export type TransferCfop = {ufCheck?:UfCheck;id:string;companyId:string;cfop:string;direction:Direction;amount:number;tax:number;entryIds:string[];status:'Conferido'|'Revisar';description:string;reasons:string[];reference:string};
 export type PeriodDeclaration={companyId:string;period:string;noMovement:true;reason:string;declaredBy:string;declaredAt:string};
 export type Transfer = { cfopStatus?:'Conferido'|'Revisar'; id: string; entryIds: string[]; key?: string; amount: number; status: 'Conferido' | 'Revisar' | 'Não encontrado'; reason: string };
-export type EvaluatedEntry = Entry & { category: Category; operation?: Operation; ruleId?: string; reasons: string[]; status: 'Conferido' | 'Revisar' };
+export type EvaluatedEntry = Entry & { ufCheck?:UfCheck; category: Category; operation?: Operation; ruleId?: string; reasons: string[]; status: 'Conferido' | 'Revisar' };
 export type ImportRecord = { id: string; companyId: string; period: string; filename: string; hash: string; rowCount: number; uploadedAt: string; warnings: string[]; taxMode: TaxMode; emptyConfirmed: boolean };
 export type Snapshot = { transferCfops?:TransferCfop[]; declarations?:PeriodDeclaration[]; id: string; period: string; processedAt: string; entries: EvaluatedEntry[]; alerts: Alert[]; transfers: Transfer[]; rules: Rule[]; imports: ImportRecord[]; companies: Company[]; inputFingerprint: string; ruleFingerprint: string };
 export type AppData = { declarations?:PeriodDeclaration[]; demo: boolean; companies: Company[]; rules: Rule[]; imports: ImportRecord[]; snapshot: Snapshot | null; stale: boolean; periods: string[] };

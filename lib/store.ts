@@ -28,7 +28,7 @@ export async function inputs(db:Connection,period:string) {
   return {companies,rules,declarations,imports:records.map(r=>r.payload),entries:records.flatMap(r=>r.entries)};
 }
 export function fingerprints(data:{companies:Company[];rules:Rule[];imports:ImportRecord[];declarations?:PeriodDeclaration[]}) {
-  return {inputFingerprint:hash(JSON.stringify([data.imports.map(i=>i.id),data.declarations||[]])),ruleFingerprint:hash(JSON.stringify(['audit-v2',data.companies,data.rules]))};
+  return {inputFingerprint:hash(JSON.stringify([data.imports.map(i=>i.id),data.declarations||[]])),ruleFingerprint:hash(JSON.stringify(['audit-v3',data.companies,data.rules]))};
 }
 export async function loadData(period:string):Promise<AppData> {
   const db=await database();

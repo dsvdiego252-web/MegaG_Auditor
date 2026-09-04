@@ -1,4 +1,5 @@
-import type { Alert, Company, Entry, EvaluatedEntry, Rule, Transfer, TransferCfop } from './types';
+import type { Alert, Company, Entry, EvaluatedEntry, Rule, Transfer, TransferCfop, UfCheck } from './types';
+import {cfopScope} from './cfop';
 import {TRANSFER_CFOPS,TRANSFER_CATALOG_SOURCE} from './transfer-catalog';
 export function audit(entries:Entry[],rules:Rule[],companies:Company[]) {
   const alerts:Alert[]=[],transfers:Transfer[]=[];
@@ -16,23 +17,25 @@ export function audit(entries:Entry[],rules:Rule[],companies:Company[]) {
       if(catalog&&rule.operation!=='transferencia'){const reason='O catálogo identifica este CFOP como transferência, mas a regra cadastrada informa outra natureza. Revise o cadastro antes de concluir.';reasons.push(reason);add(e,'transferencia-cfop','Natureza do CFOP diverge da regra',reason,'alta');}
     }
     const operation=catalog?'transferencia':rule?.operation;
+    let ufCheck:UfCheck|undefined;
     if(operation==='transferencia'){
-      const counterpart=companies.find(c=>c.id===e.counterpart);
+      const counterpart=companies.find(c=>c.id===e.counterpart),scope=cfopScope(e.cfop);
       let reason='';
       if(e.counterpart===e.companyId)reason='A contraparte da transferência é a própria empresa.';
-      else if(!company?.uf||!counterpart?.uf)reason='Não há UF e contraparte suficientes para conferir se o CFOP é interno ou interestadual. A identificação da transferência por CFOP foi preservada.';
-      else if(!['1','2','5','6'].includes(e.cfop[0]))reason='O CFOP configurado não representa uma operação interna ou interestadual entre as empresas do grupo.';
-      else if(['2','6'].includes(e.cfop[0])!==(company.uf!==counterpart.uf))reason='O prefixo do CFOP diverge das UFs das empresas: '+company.uf+' → '+counterpart.uf+'. Confira se a transferência é interna ou interestadual.';
-      if(reason){reasons.push(reason);add(e,'transferencia-uf','Transferência: conferir CFOP e UFs',reason);}
+      else if(!scope||scope.scope==='exterior')reason='O CFOP configurado não representa uma operação interna ou interestadual entre as empresas do grupo.';
+      else if(!company?.uf||!counterpart?.uf)ufCheck={status:'Pendente',reason:scope.label+'. A conferência das UFs das empresas aguarda o cadastro da contraparte e suas UFs no relatório detalhado.'};
+      else if((scope.scope==='interestadual')!==(company.uf!==counterpart.uf))reason=scope.label+', mas as UFs cadastradas ('+company.uf+' e '+counterpart.uf+') contradizem essa abrangência. Confira o CFOP e os cadastros.';
+      else ufCheck={status:'Conferido',reason:scope.label+'. As UFs cadastradas ('+company.uf+' e '+counterpart.uf+') são compatíveis com o CFOP.'};
+      if(reason){ufCheck={status:'Divergente',reason};reasons.push(reason);add(e,'transferencia-uf','Transferência: divergência de CFOP e UFs',reason);}
     }
     if(!e.taxConfirmed){const reason='A coluna '+(e.taxLabel||'de imposto')+' não corresponde ao sentido '+e.direction+' do CFOP. Confirme o mapeamento para incluir o valor no crédito/débito e no saldo.';reasons.push(reason);add(e,'coluna','Mapeamento do ICMS pendente',reason,'alta');}
     if(e.amount<0||e.base<0||e.tax<0){const reason='Valor negativo na origem. Conferir estorno ou ajuste sem normalizar o sinal.';reasons.push(reason);add(e,'negativo','Valor negativo na origem',reason);}
-    return {...e,category:rule?.category??'revisar',operation,ruleId:rule?.id,reasons,status:reasons.length?'Revisar':'Conferido'};
+    return {...e,...(ufCheck?{ufCheck}:{}),category:rule?.category??'revisar',operation,ruleId:rule?.id,reasons,status:reasons.length?'Revisar':'Conferido'};
   });
   const transferEntries=evaluated.filter(e=>e.operation==='transferencia');
   const byCfop=new Map<string,EvaluatedEntry[]>();
   for(const e of transferEntries){const id=e.companyId+':'+e.cfop;const group=byCfop.get(id)||[];group.push(e);byCfop.set(id,group);}
-  const transferCfops:TransferCfop[]=Array.from(byCfop,([id,group])=>({id,companyId:group[0].companyId,cfop:group[0].cfop,direction:group[0].direction,amount:group.reduce((s,e)=>s+e.amount,0),tax:group.reduce((s,e)=>s+e.tax,0),entryIds:group.map(e=>e.id),status:group.some(e=>e.status==='Revisar')?'Revisar':'Conferido',description:TRANSFER_CFOPS[group[0].cfop]?.description||'Transferência identificada pela regra cadastrada',reasons:[...new Set(group.flatMap(e=>e.reasons))],reference:TRANSFER_CFOPS[group[0].cfop]?TRANSFER_CATALOG_SOURCE:rules.find(r=>r.id===group[0].ruleId)?.reference||''}));
+  const transferCfops:TransferCfop[]=Array.from(byCfop,([id,group])=>({id,companyId:group[0].companyId,cfop:group[0].cfop,direction:group[0].direction,amount:group.reduce((s,e)=>s+e.amount,0),tax:group.reduce((s,e)=>s+e.tax,0),entryIds:group.map(e=>e.id),status:group.some(e=>e.status==='Revisar')?'Revisar':'Conferido',description:TRANSFER_CFOPS[group[0].cfop]?.description||'Transferência identificada pela regra cadastrada',reasons:[...new Set(group.flatMap(e=>e.reasons))],reference:TRANSFER_CFOPS[group[0].cfop]?TRANSFER_CATALOG_SOURCE:rules.find(r=>r.id===group[0].ruleId)?.reference||'',ufCheck:{status:group.some(e=>e.ufCheck?.status==='Divergente')?'Divergente':group.some(e=>e.ufCheck?.status!=='Conferido')?'Pendente':'Conferido',reason:[...new Set(group.flatMap(e=>e.ufCheck?[e.ufCheck.reason]:[]))].join(' ')}}));
   const keys=new Map<string,EvaluatedEntry[]>();
   for(const e of transferEntries){
     if(!e.key){transfers.push({id:e.id,entryIds:[e.id],amount:e.amount,status:'Revisar',cfopStatus:e.status,reason:'Linha agregada sem chave NF-e. A análise por CFOP está disponível; importe o relatório detalhado para cruzar saída e entrada.'});continue;}
@@ -48,6 +51,7 @@ export function audit(entries:Entry[],rules:Rule[],companies:Company[]) {
       const pair=ra?.operation==='transferencia'&&rb?.operation==='transferencia'&&ra.pairedCfops?.includes(b.cfop)&&rb.pairedCfops?.includes(a.cfop);
       if(!pair)reason='Par de CFOPs '+a.cfop+' / '+b.cfop+' sem correspondência permitida nas duas regras aplicáveis. Cadastre os pares validados pela equipe fiscal.';
       else if(a.status==='Revisar'||b.status==='Revisar')reason='O par de CFOPs está cadastrado, mas há pendências nos lançamentos: '+[...new Set([...a.reasons,...b.reasons])].join(' ');
+      else if(a.ufCheck?.status!=='Conferido'||b.ufCheck?.status!=='Conferido')reason='Os CFOPs identificam a abrangência da operação. A conciliação documental aguarda a conferência das UFs das duas empresas.';
       else {cfopStatus='Conferido';
         if(a.companyId===b.companyId)reason='Entrada e saída estão atribuídas à mesma empresa.';
         else if(a.amount!==b.amount)reason='Os valores contábeis de entrada e saída divergem.';
