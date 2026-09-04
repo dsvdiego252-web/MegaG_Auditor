@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { resolve,join } from 'node:path';
 import { homedir } from 'node:os';
 import { DEFAULT_COMPANIES } from './types';
+import {postgresPoolConfig} from './postgres-config';
 type Row = Record<string, unknown>;
 export type Connection = { query<T = Row>(sql: string, params?: unknown[]): Promise<T[]> };
 export type Database = Connection & { close():Promise<void>; transaction<T>(fn:(db:Connection)=>Promise<T>):Promise<T> };
@@ -10,7 +11,7 @@ async function initialize():Promise<Database> {
   let db:Database;
   if (process.env.DATABASE_URL) {
     const { Pool } = await import('pg');
-    const pool = new Pool({ connectionString:process.env.DATABASE_URL, max:3, idleTimeoutMillis:20000, connectionTimeoutMillis:10000 });
+    const pool = new Pool(postgresPoolConfig(process.env.DATABASE_URL));
     db = { close: async () => pool.end(),
       query: async <T>(sql:string, params:unknown[]=[]) => (await pool.query(sql,params)).rows as T[],
       transaction: async fn => {
