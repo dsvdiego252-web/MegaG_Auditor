@@ -10,6 +10,7 @@ export const FACTS={
   productDescription:{label:'Descrição do produto',numeric:false},cnae:{label:'CNAE',numeric:false},regime:{label:'Regime tributário',numeric:false},
   ufOrigem:{label:'UF de origem',numeric:false},ufDestino:{label:'UF de destino',numeric:false},
   icmsRate:{label:'Alíquota ICMS (%) informada',numeric:true},mva:{label:'MVA (%) informada',numeric:true},
+  chainPosition:{label:'Posição na cadeia (substituto / substituido)',numeric:false},finalidade:{label:'Finalidade',numeric:false},baseSt:{label:'Base ST (R$)',numeric:true},taxSt:{label:'ICMS-ST (R$)',numeric:true},
   base:{label:'Base ICMS (R$)',numeric:true},tax:{label:'ICMS informado (R$)',numeric:true},amount:{label:'Valor contábil (R$)',numeric:true}
 } as const;
 export type FactField=keyof typeof FACTS;

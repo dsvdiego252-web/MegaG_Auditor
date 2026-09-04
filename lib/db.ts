@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { resolve,join } from 'node:path';
 import { homedir } from 'node:os';
 import { DEFAULT_COMPANIES } from './types';
+import {CFOP_MIGRATIONS} from './cfop-migrations';
 import {postgresPoolConfig} from './postgres-config';
 type Row = Record<string, unknown>;
 export type Connection = { query<T = Row>(sql: string, params?: unknown[]): Promise<T[]> };
@@ -36,6 +37,7 @@ async function initialize():Promise<Database> {
   await db.query('CREATE TABLE IF NOT EXISTS mega_lock (id integer PRIMARY KEY)');
   await db.query('INSERT INTO mega_lock(id) VALUES (1) ON CONFLICT DO NOTHING');
   const ddl = [
+    ...CFOP_MIGRATIONS,
     'CREATE TABLE IF NOT EXISTS mega_companies (id text PRIMARY KEY, payload jsonb NOT NULL)',
     'CREATE TABLE IF NOT EXISTS mega_imports (id text PRIMARY KEY, company_id text NOT NULL REFERENCES mega_companies(id), period text NOT NULL, active boolean NOT NULL DEFAULT true, payload jsonb NOT NULL, entries jsonb NOT NULL, source text NOT NULL)',
     'CREATE UNIQUE INDEX IF NOT EXISTS mega_active_import ON mega_imports(company_id,period) WHERE active',

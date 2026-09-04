@@ -81,7 +81,7 @@ O ambiente de preview deve ter banco, chave e credenciais separados da produçã
 
 Para conexões Supabase (`*.pooler.supabase.com` ou `db.<projeto>.supabase.co`), o servidor inclui automaticamente a CA pública **Supabase Root 2021 CA**, mantendo TLS, verificação da cadeia e do nome do servidor. A CA está empacotada em `lib/certificates/supabase-root-2021.json`, com fonte oficial, fingerprint e validade até 26/04/2031; não contém chaves privadas ou dados do grupo. URLs com certificados explicitamente configurados continuam usando essa configuração. Referências: [SSL no Supabase](https://supabase.com/docs/guides/platform/ssl-enforcement) e [endereço do certificado no código oficial do painel](https://github.com/supabase/supabase/blob/c6cdf4bd5343f8f00a59667f222cde434765e810/apps/studio/hooks/custom-content/custom-content.json). Revise a CA quando o provedor fizer rotação ou antes de seu vencimento.
 
-A Vercel limita payloads de Functions a 4,5 MB. Esta versão limita o lote de upload a 3,5 MB e processa relatórios resumidos de forma síncrona. Resultados acima do limite da versão são bloqueados com mensagem explícita. Processamento massivo por item/documento precisará de armazenamento privado de objetos, filas, paginação e jobs; não é um importador de XML ou SPED completo. Limite atual do parser: 12.000 linhas por arquivo, sujeito ao limite de tamanho do resultado.
+A Vercel limita payloads de Functions a 4,5 MB. Esta versão limita o lote de upload a 3,5 MB e processa relatórios resumidos de forma síncrona. Resultados acima do limite da versão são bloqueados com mensagem explícita. A EFD ICMS/IPI é processada por C100/C170/C190/E100/E110, com bloqueio ou aviso explícito para registros fora da cobertura. Grandes volumes detalhados precisarão de armazenamento privado de objetos, filas, paginação e jobs. Não existe importação por XML. Limite atual: 12.000 registros analíticos e itens por arquivo, sujeito ao limite de tamanho do resultado.
 
 Referências técnicas: [Route Handlers do Next.js](https://nextjs.org/docs/app/getting-started/route-handlers), [persistência PGlite](https://pglite.dev/docs/filesystems), [limites de Functions da Vercel](https://vercel.com/docs/functions/limitations).
 
@@ -109,3 +109,8 @@ Próximas etapas: validar a amostra detalhada Consinco, reconciliar LivroApu/Ope
 Referência do catálogo de natureza: [Tabela CFOP da SEFAZ/PE](https://www.sefaz.pe.gov.br/Legislacao/Tributaria/Documents/Legislacao/Tabelas/CFOP.htm). A vigência e o fundamento tributário devem ser validados no cadastro de regras.
 
 No Windows, o OneDrive pode marcar diretórios como somente leitura e impedir a reabertura do PostgreSQL incorporado. Mantenha o banco fora de pastas sincronizadas e faça backups com o banco fechado ou por exportação consistente. A pasta do código pode permanecer no OneDrive.
+
+
+## Catálogo automático de CFOP
+
+A tela **Regras fiscais** instala em um clique os 619 CFOPs vigentes da consolidação oficial do CONFAZ. O catálogo classifica natureza, direção e abrangência; crédito, débito, ST e incidência dependem das evidências do lançamento e das exceções fiscais validadas. Consulte o [relatório de implantação](docs/MOTOR-CFOP-RELATORIO.md).

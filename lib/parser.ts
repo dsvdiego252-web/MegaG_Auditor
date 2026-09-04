@@ -1,4 +1,5 @@
-import type { Entry, TaxMode } from './types';
+import {parseEfd} from './efd-parser';
+import type { Entry, TaxMode, ImportRecord } from './types';
 import type {TaxFacts,FactField} from './tax-motor';
 export const MAX_FILE_BYTES = 3_500_000;
 export const MAX_ROWS = 12000;
@@ -25,7 +26,7 @@ function fiscalFields(get:(name:string)=>string,headers:string[]):TaxFacts {
     ['ncm',['ncm'],/^\d{8}$/],['cest',['cest'],/^\d{7}$/],['cstIcms',['csticms'],/^\d{2,3}$/],
     ['csosn',['csosn'],/^\d{3}$/],['cbenef',['cbenef'],/^[A-Za-z0-9]{1,20}$/],
     ['productDescription',['descricaoproduto','descricaodoproduto'],undefined],['cnae',['cnae'],/^\d{7}$/],
-    ['regime',['regimetributario'],undefined],['ufOrigem',['uforigem'],/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO|EX)$/],
+    ['regime',['regimetributario'],undefined],['chainPosition',['posicaocadeia'],/^(substituto|substituido)$/],['finalidade',['finalidade'],undefined],['ufOrigem',['uforigem'],/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO|EX)$/],
     ['ufDestino',['ufdestino'],/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO|EX)$/]
   ];
   for(const [field,aliases,pattern] of columns){
@@ -51,7 +52,7 @@ function readHeader(line:string){
   if(new Set(headers).size!==headers.length)throw new ImportError('Cabeçalhos duplicados.');
   return headers;
 }
-export function parseReport(buffer:Uint8Array,options:{companyId:string;period:string;importId:string;taxMode:TaxMode;filename:string}){
+export function parseReport(buffer:Uint8Array,options:{companyId:string;period:string;importId:string;taxMode:TaxMode;filename:string}):{entries:Entry[];warnings:string[];encoding:string;sourceKind?:'consinco'|'efd-icms';sourceCnpj?:string;assessment?:ImportRecord['assessment'];coverageWarnings?:string[]}{
   if(buffer.byteLength>MAX_FILE_BYTES)throw new ImportError('Limite de 3,5 MB por arquivo.');
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(options.period))throw new ImportError('Competência inválida.');
   if(!/\.(txt|csv)$/i.test(options.filename))throw new ImportError('Envie um relatório TXT ou CSV separado por ponto e vírgula.');
@@ -62,6 +63,7 @@ export function parseReport(buffer:Uint8Array,options:{companyId:string;period:s
   const lines=text.replace(/^\uFEFF/,'').split(/\r\n|\n|\r/);
   const headerIndex=lines.findIndex(l=>l.trim());
   if(headerIndex<0)throw new ImportError('Arquivo sem cabeçalho.');
+  if(lines[headerIndex].startsWith('|0000|'))return parseEfd(lines,options,encoding);
   let headers=readHeader(lines[headerIndex]);
   const entries:Entry[]=[],errors:string[]=[],errorLines:number[]=[],warnings:string[]=[];
   for(let i=headerIndex+1;i<lines.length;i++){
@@ -93,7 +95,13 @@ export function parseReport(buffer:Uint8Array,options:{companyId:string;period:s
       if(counterpart&&!/^0[1-6]$/.test(counterpart))throw new Error('Empresa contraparte deve ser um código de 01 a 06.');
       const taxConfirmed=nativeTax||options.taxMode==='por-direcao';
       const fiscal=fiscalFields(get,headers);
-      entries.push({id:options.importId+':'+(i+1),importId:options.importId,companyId:options.companyId,period:options.period,line:i+1,raw:lines[i],...(Object.keys(fiscal).length?{fiscal}:{}),cfop,direction,amount:numbers[0],base:numbers[1],tax,exempt:numbers[2],other:numbers[3],taxConfirmed,taxLabel:taxColumn==='impostocreditado'?'Imposto Creditado':'Imposto Debitado',taxMapping:nativeTax?'cabecalho':options.taxMode==='por-direcao'?'confirmacao':'pendente',...(key?{key}:{}),...(date?{date}:{}),...(get('documento')?{document:get('documento')}:{}),...(counterpart?{counterpart}:{})});
+      const optionalMoney=(name:string)=>get(name)?parseMoney(get(name)):undefined;
+      const stBase=optionalMoney('baseicmsst'),stTax=optionalMoney('valoricmsst'),taxable=optionalMoney('valortributado'),st=optionalMoney('valorst');
+      if(stBase!==undefined)fiscal.baseSt=stBase/100;if(stTax!==undefined)fiscal.taxSt=stTax/100;
+      const declared=normalize(get('tipomovimento'));if(declared&&!['entrada','saida'].includes(declared))throw new Error('TipoMovimento deve ser entrada ou saida.');
+      const granularity=get('item')?'item':key||get('documento')?'documento':'agregado';
+      const extra:Partial<Entry>={sourceKind:'consinco',granularity,...(declared?{directionDeclared:declared as Entry['direction']}:{ }),...(stBase===undefined?{}:{stBase}),...(stTax===undefined?{}:{stTax}),...(taxable===undefined&&st===undefined?{}:{reportedParts:{...(taxable===undefined?{}:{tributada:taxable}),...(st===undefined?{}:{st})}}),...(get('item')?{itemId:get('item')}:{})};
+      entries.push({...extra,id:options.importId+':'+(i+1),importId:options.importId,companyId:options.companyId,period:options.period,line:i+1,raw:lines[i],...(Object.keys(fiscal).length?{fiscal}:{}),cfop,direction,amount:numbers[0],base:numbers[1],tax,exempt:numbers[2],other:numbers[3],taxConfirmed,taxLabel:taxColumn==='impostocreditado'?'Imposto Creditado':'Imposto Debitado',taxMapping:nativeTax?'cabecalho':options.taxMode==='por-direcao'?'confirmacao':'pendente',...(key?{key}:{}),...(date?{date}:{}),...(get('documento')?{document:get('documento')}:{}),...(counterpart?{counterpart}:{})});
       if(entries.length>MAX_ROWS)throw new ImportError('Limite de '+MAX_ROWS+' linhas por relatório.');
     }catch(e){if(e instanceof ImportError)throw e;errorLines.push(i+1);errors.push('Linha '+(i+1)+': '+(e as Error).message);}
   }
@@ -101,5 +109,5 @@ export function parseReport(buffer:Uint8Array,options:{companyId:string;period:s
   if(!entries.length)warnings.push('Arquivo contém somente cabeçalho. Necessária declaração de ausência de movimento para esta empresa e competência.');
   if(entries.some(e=>!e.taxConfirmed))warnings.push('O rótulo do imposto não corresponde ao sentido de algumas linhas. Crédito/débito e saldo ficam pendentes até confirmar o mapeamento.');
   if(entries.some(e=>!e.key))warnings.push('Fonte resumida/sem chave: auditoria por CFOP disponível; cruzamento documental depende do relatório detalhado.');
-  return {entries,warnings:[...new Set(warnings)],encoding};
+  return {entries,warnings:[...new Set(warnings)],encoding,sourceKind:'consinco'};
 }

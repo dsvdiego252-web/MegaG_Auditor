@@ -1,11 +1,15 @@
 import type { Alert, Company, Entry, EvaluatedEntry, Rule, Transfer, TransferCfop, UfCheck } from './types';
+import {evaluateCfopEntries} from './cfop-audit';
+import type {CfopMasterRule} from './cfop-master';
+import {hierarchyReconciliation,DEFAULT_AUDIT_SETTINGS,type AuditSettings} from './movement-audit';
+import type {ImportRecord} from './types';
 import {cfopScope} from './cfop';
 import {TRANSFER_CFOPS,TRANSFER_CATALOG_SOURCE} from './transfer-catalog';
 import {evaluateTaxRules,type TaxRule} from './tax-motor';
-export function audit(entries:Entry[],rules:Rule[],companies:Company[],taxRules:TaxRule[]=[]) {
+export function audit(entries:Entry[],rules:Rule[],companies:Company[],taxRules:TaxRule[]=[],options?:{masterRules:CfopMasterRule[];settings:AuditSettings;imports?:ImportRecord[]}) {
   const alerts:Alert[]=[],transfers:Transfer[]=[];
   const add=(e:Entry,kind:string,title:string,reason:string,priority:'alta'|'media'|'baixa'='media')=>alerts.push({id:`${e.id}:${kind}`,entryId:e.id,companyId:e.companyId,priority,title,reason,amount:e.tax,kind});
-  const evaluated:EvaluatedEntry[]=entries.map(e=>{
+  const evaluated:EvaluatedEntry[]=options?.masterRules.length?evaluateCfopEntries(entries,rules,companies,taxRules,options.masterRules,options.settings,alerts):entries.map(e=>{
     const company=companies.find(c=>c.id===e.companyId);
     const matching=rules.filter(r=>r.active&&r.cfop===e.cfop&&(!r.companyId||r.companyId===e.companyId)&&(!r.uf||r.uf===company?.uf)&&r.start<=e.period&&(!r.end||r.end>=e.period));
     const reasons:string[]=[],rule=matching.length===1?matching[0]:undefined;
@@ -35,10 +39,18 @@ export function audit(entries:Entry[],rules:Rule[],companies:Company[],taxRules:
     for(const finding of taxFindings)if(finding.status!=='OK'){reasons.push(finding.reason);add(e,'motor:'+finding.ruleId,'Motor tributário: '+finding.title,finding.reason,finding.priority);}
     return {...e,...(ufCheck?{ufCheck}:{}),...(taxFindings.length?{taxFindings}:{}),category:rule?.category??'revisar',operation,ruleId:rule?.id,reasons,status:reasons.length?'Revisar':'Conferido'};
   });
+  if(options?.masterRules.length)for(const e of evaluated.filter(e=>e.operation==='transferencia')){
+    const company=companies.find(c=>c.id===e.companyId),counterpart=companies.find(c=>c.id===e.counterpart),scope=cfopScope(e.cfop);
+    if(e.counterpart===e.companyId)e.ufCheck={status:'Divergente',reason:'A contraparte é a própria empresa.'};
+    else if(!company?.uf||!counterpart?.uf)e.ufCheck={status:'Pendente',reason:(scope?.label||'Abrangência a revisar')+'. A conferência documental aguarda as UFs das duas empresas.'};
+    else if(!scope||scope.scope==='exterior'||(scope.scope==='interestadual')!==(company.uf!==counterpart.uf))e.ufCheck={status:'Divergente',reason:'As UFs '+company.uf+' / '+counterpart.uf+' contradizem a abrangência do CFOP.'};
+    else e.ufCheck={status:'Conferido',reason:(scope?.label||'')+'. UFs das contrapartes conferidas.'};
+    if(e.ufCheck.status==='Divergente'){e.status='Revisar';e.reasons.push(e.ufCheck.reason);add(e,'transferencia-uf','Transferência: divergência de UFs',e.ufCheck.reason);}
+  }
   const transferEntries=evaluated.filter(e=>e.operation==='transferencia');
   const byCfop=new Map<string,EvaluatedEntry[]>();
   for(const e of transferEntries){const id=e.companyId+':'+e.cfop;const group=byCfop.get(id)||[];group.push(e);byCfop.set(id,group);}
-  const transferCfops:TransferCfop[]=Array.from(byCfop,([id,group])=>({id,companyId:group[0].companyId,cfop:group[0].cfop,direction:group[0].direction,amount:group.reduce((s,e)=>s+e.amount,0),tax:group.reduce((s,e)=>s+e.tax,0),entryIds:group.map(e=>e.id),status:group.some(e=>e.status==='Revisar')?'Revisar':'Conferido',description:TRANSFER_CFOPS[group[0].cfop]?.description||'Transferência identificada pela regra cadastrada',reasons:[...new Set(group.flatMap(e=>e.reasons))],reference:TRANSFER_CFOPS[group[0].cfop]?TRANSFER_CATALOG_SOURCE:rules.find(r=>r.id===group[0].ruleId)?.reference||'',ufCheck:{status:group.some(e=>e.ufCheck?.status==='Divergente')?'Divergente':group.some(e=>e.ufCheck?.status!=='Conferido')?'Pendente':'Conferido',reason:[...new Set(group.flatMap(e=>e.ufCheck?[e.ufCheck.reason]:[]))].join(' ')}}));
+  const transferCfops:TransferCfop[]=Array.from(byCfop,([id,group])=>({id,companyId:group[0].companyId,cfop:group[0].cfop,direction:group[0].direction,amount:group.reduce((s,e)=>s+e.amount,0),tax:group.reduce((s,e)=>s+e.tax,0),entryIds:group.map(e=>e.id),status:group.some(e=>e.status==='Revisar')?'Revisar':'Conferido',description:group[0].cfopAnalysis?.descricao||TRANSFER_CFOPS[group[0].cfop]?.description||'Transferência identificada pela regra cadastrada',reasons:[...new Set(group.flatMap(e=>e.reasons))],reference:group[0].cfopAnalysis?.fundamento||(TRANSFER_CFOPS[group[0].cfop]?TRANSFER_CATALOG_SOURCE:rules.find(r=>r.id===group[0].ruleId)?.reference||''),ufCheck:{status:group.some(e=>e.ufCheck?.status==='Divergente')?'Divergente':group.some(e=>e.ufCheck?.status!=='Conferido')?'Pendente':'Conferido',reason:[...new Set(group.flatMap(e=>e.ufCheck?[e.ufCheck.reason]:[]))].join(' ')}}));
   const keys=new Map<string,EvaluatedEntry[]>();
   for(const e of transferEntries){
     if(!e.key){transfers.push({id:e.id,entryIds:[e.id],amount:e.amount,status:'Revisar',cfopStatus:e.status,reason:'Linha agregada sem chave NF-e. A análise por CFOP está disponível; importe o relatório detalhado para cruzar saída e entrada.'});continue;}
@@ -69,11 +81,14 @@ export function audit(entries:Entry[],rules:Rule[],companies:Company[],taxRules:
   for(const company of companies)if(!company.uf)alerts.push({id:`uf:${company.id}`,companyId:company.id,priority:'media',title:'UF da empresa não confirmada',reason:'Confirme a UF no cadastro. Regras estaduais só se aplicam quando a UF corresponder exatamente.',kind:'cadastro'});
   const pending=taxRules.filter(r=>r.domain==='ICMS'&&r.status==='pendente');
   if(pending.length)alerts.push({id:'motor:pendentes',priority:'media',title:'Motor tributário: referências pendentes',reason:pending.length+' referências de ICMS aguardam critérios, vigência e validação em Regras fiscais. Percentuais e casos históricos ainda não produzem conclusões automáticas.',kind:'motor'});
+  const reconciliations=options?.masterRules.length?hierarchyReconciliation(evaluated,options.settings,options.imports):undefined;
+  for(const r of reconciliations||[])if(r.status!=='OK'&&(r.id.includes(':C100:')||r.id.includes(':C170:')||r.level==='apuracao'))alerts.push({id:'reconciliacao:'+r.id,companyId:r.companyId,entryId:r.entryIds[0],kind:'reconciliacao-'+r.level,priority:r.status==='CRITICO'?'alta':'media',title:'Reconciliação: '+r.level,reason:r.reason+' Diferença: '+(r.difference/100).toFixed(2)+'.',amount:Math.abs(r.difference),action:'Conferir os registros de origem e explicar a diferença antes de concluir.'});
+  for(const imp of options?.imports||[])for(const [index,warning] of (imp.coverageWarnings||[]).entries())alerts.push({id:imp.id+':cobertura:'+index,companyId:imp.companyId,kind:'cobertura-efd',priority:'alta',title:'Cobertura da EFD requer revisão',reason:warning});
   alerts.sort((a,b)=>({alta:0,media:1,baixa:2}[a.priority]-{alta:0,media:1,baixa:2}[b.priority]));
-  return {entries:evaluated,alerts,transfers,transferCfops};
+  return {entries:evaluated,alerts,transfers,transferCfops,...(reconciliations?{reconciliations}:{})};
 }
 export function totals(entries:EvaluatedEntry[]){
   const sum=(predicate:(e:EvaluatedEntry)=>boolean,field:'amount'|'tax'='amount')=>entries.filter(predicate).reduce((s,e)=>s+e[field],0);
   const credit=sum(e=>e.direction==='entrada'&&e.taxConfirmed,'tax'),debit=sum(e=>e.direction==='saida'&&e.taxConfirmed,'tax');
-  return {incoming:sum(e=>e.direction==='entrada'),outgoing:sum(e=>e.direction==='saida'),purchases:sum(e=>e.operation==='compra'),sales:sum(e=>e.operation==='venda'),credit,debit,balance:debit-credit,creditComplete:!entries.some(e=>e.direction==='entrada'&&!e.taxConfirmed),debitComplete:!entries.some(e=>e.direction==='saida'&&!e.taxConfirmed),complete:!entries.some(e=>!e.taxConfirmed),review:sum(e=>e.category==='revisar')};
+  return {incoming:sum(e=>e.direction==='entrada'),outgoing:sum(e=>e.direction==='saida'),purchases:sum(e=>e.cfopAnalysis?e.cfopAnalysis.impacta_compras==='SIM':e.operation==='compra'),sales:sum(e=>e.cfopAnalysis?e.cfopAnalysis.impacta_faturamento==='SIM':e.operation==='venda'),credit,debit,balance:debit-credit,creditComplete:!entries.some(e=>e.direction==='entrada'&&!e.taxConfirmed),debitComplete:!entries.some(e=>e.direction==='saida'&&!e.taxConfirmed),complete:!entries.some(e=>!e.taxConfirmed),review:entries.reduce((s,e)=>s+(e.cfopAnalysis?e.cfopAnalysis.classificacao==='REVISAR'?Math.abs(e.amount):Math.abs(e.cfopAnalysis.parts.revisar):e.category==='revisar'?Math.abs(e.amount):0),0)};
 }

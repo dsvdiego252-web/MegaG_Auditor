@@ -5,6 +5,7 @@ import { demoData } from '@/lib/demo';
 import {loadData,importFiles,processPeriod,saveRule,saveCompany,setPeriodDeclaration,periodSchema} from '@/lib/store';
 import {checkOrigin,requireAuth,login,logout,sessionCookie,HttpError,decrypt} from '@/lib/security';
 import {database} from '@/lib/db';
+import {cfopCatalog,installCfopCatalog,saveAuditSettings} from '@/lib/cfop-store';
 import {importTaxPackage,saveTaxRule} from '@/lib/tax-store';
 import type {TaxPackage} from '@/lib/tax-motor';
 import {databaseDiagnostic} from '@/lib/db-diagnostics';
@@ -51,6 +52,16 @@ export async function GET(req:Request,{params}:{params:Promise<{action:string}>}
       if(!row)throw new HttpError('Pacote não encontrado.',404);
       return new Response(new Uint8Array(decrypt(row.source)),{headers:{'Content-Type':'application/json; charset=utf-8','Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(row.payload.filename),'Cache-Control':'no-store'}});
     }
+    if(action==='cfop-catalog') {
+      if(demo) throw new HttpError('Catálogo instalado disponível no ambiente real.',401);
+      const page=z.coerce.number().int().min(0).max(100).parse(url.searchParams.get('page')||0);
+      return json(await cfopCatalog(page,(url.searchParams.get('q')||'').slice(0,200),url.searchParams.get('group')||'all'));
+    }
+    if(action==='rule-history') {
+      if(demo)return json([]);
+      const id=z.string().max(100).parse(url.searchParams.get('id'));
+      return json(await (await database()).query("SELECT actor,created_at,payload FROM mega_events WHERE action='salvar-regra' AND payload->'after'->>'id'=$1 ORDER BY created_at DESC LIMIT 50",[id]));
+    }
     if(action==='source') {
       if(demo) throw new HttpError('A demonstração não contém arquivos reais.',404);
       const [row]=await (await database()).query<{source:string;payload:ImportRecord}>('SELECT source,payload FROM mega_imports WHERE id=$1',[url.searchParams.get('id')||'']);
@@ -66,7 +77,7 @@ export async function GET(req:Request,{params}:{params:Promise<{action:string}>}
     const data=demo?demoData(period):await loadData(period);
     if(action==='data') {
       // Nunca entregar linhas ainda não processadas: o dashboard representa uma versão explícita.
-      return json({demo:data.demo,companies:data.companies,rules:data.rules,taxRules:data.taxRules||[],taxPackages:data.taxPackages||[],imports:data.imports,snapshot:data.snapshot,stale:data.stale,periods:data.periods,declarations:data.declarations||[]});
+      return json({demo:data.demo,cfopInstalled:data.cfopInstalled,auditSettings:data.auditSettings,auditSettingsVersion:data.auditSettingsVersion,companies:data.companies,rules:data.rules,taxRules:data.taxRules||[],taxPackages:data.taxPackages||[],imports:data.imports,snapshot:data.snapshot,stale:data.stale,periods:data.periods,declarations:data.declarations||[]});
     }
     if(!data.snapshot) throw new HttpError('Processe a competência antes de exportar.');
     const company=url.searchParams.get('company')||'all';
@@ -116,6 +127,8 @@ export async function POST(req:Request,{params}:{params:Promise<{action:string}>
     }
     const body=await req.json();
     if(action==='process') return json({snapshot:await processPeriod(periodSchema.parse(body.period),actor)});
+    if(action==='cfop-install') return json(await installCfopCatalog(actor));
+    if(action==='audit-settings') return json(await saveAuditSettings(body,actor));
     if(action==='rules') return json(await saveRule(body,actor));
     if(action==='tax-rule') return json(await saveTaxRule(body,actor));
     if(action==='period-status') return json(await setPeriodDeclaration(body,actor));
