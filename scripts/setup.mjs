@@ -1,11 +1,13 @@
 import { randomBytes,scryptSync } from 'node:crypto';
 import { existsSync,writeFileSync } from 'node:fs';
+import {join} from 'node:path';
+import {homedir} from 'node:os';
 if(existsSync('.env.local')) {console.log('Configuração existente preservada. Consulte .env.local e ACESSO-LOCAL.txt.');process.exit(0);}
 const password=randomBytes(18).toString('base64url');
 const salt=randomBytes(16).toString('hex');
 const hash=scryptSync(password,salt,64).toString('hex');
 writeFileSync('.env.local',[
-  'LOCAL_DATABASE_PATH=.data/postgres-local',
+  'LOCAL_DATABASE_PATH='+JSON.stringify(process.platform==='win32'?join(process.env.LOCALAPPDATA||join(homedir(),'AppData','Local'),'MegaG-Auditor','postgres').replaceAll('\\','/') : '.data/postgres-local'),
   'ADMIN_EMAIL=admin@megag.local',
   'ADMIN_PASSWORD_HASH='+salt+':'+hash,
   'DATA_ENCRYPTION_KEY='+randomBytes(32).toString('hex'),

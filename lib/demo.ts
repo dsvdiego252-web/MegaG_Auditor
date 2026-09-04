@@ -7,7 +7,7 @@ export function demoData(period='2026-08'):AppData {
     {id:'demo-venda',cfop:'5102',companyId:'',uf:'',start:'2026-01',end:'',category:'tributada',operation:'venda',credit:'revisar',expectCredit:false,reason:'Cenário de venda fictícia, sujeito a revisão.',reference:'Regra de demonstração — sem valor fiscal',active:true},
     {id:'demo-st',cfop:'5405',companyId:'',uf:'',start:'2026-01',end:'',category:'st',operation:'venda',credit:'vedar',expectCredit:false,reason:'Cenário fictício de classificação ST para demonstrar a interface.',reference:'Regra de demonstração — sem valor fiscal',active:true},
     {id:'demo-consumo',cfop:'1556',companyId:'',uf:'',start:'2026-01',end:'',category:'outras',operation:'outra',credit:'vedar',expectCredit:false,reason:'Neste exemplo fictício, a política cadastrada veda crédito para a operação.',reference:'Regra de demonstração — sem valor fiscal',active:true},
-    ...['1152','5152'].map((cfop,i)=>({id:'demo-trans-'+i,cfop,companyId:'',uf:'',start:'2026-01',end:'',category:'outras' as const,operation:'transferencia' as const,credit:'vedar' as const,expectCredit:false,reason:'Cenário fictício de transferência entre empresas do grupo.',reference:'Regra de demonstração — sem valor fiscal',active:true}))
+    ...['1152','5152'].map((cfop,i)=>({id:'demo-trans-'+i,cfop,pairedCfops:[i===0?'5152':'1152'],companyId:'',uf:'',start:'2026-01',end:'',category:'outras' as const,operation:'transferencia' as const,credit:'vedar' as const,expectCredit:false,reason:'Cenário fictício de transferência entre empresas do grupo.',reference:'Regra de demonstração — sem valor fiscal',active:true}))
   ];
   const entries:Entry[]=[];
   const cfops=['1102','5102','5405','1556','1949','1152','5152'];

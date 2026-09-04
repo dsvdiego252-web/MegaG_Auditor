@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,scryptSync} from 'node:crypto';
 import {database} from '../lib/db';
-import {importFiles,loadData,processPeriod,saveRule,saveCompany} from '../lib/store';
+import {importFiles,loadData,processPeriod,saveRule,saveCompany,setPeriodDeclaration} from '../lib/store';
 import {decrypt,hash,login,logout,requireAuth,checkOrigin,encrypt} from '../lib/security';
 const header='CFOP;Valor Contábil;Base de Cálculo;Imposto Creditado;Isentas ou Não tributadas;Outras';
 test('persistência, importação atômica, histórico, isolamento por competência e autenticação',async()=>{
@@ -37,6 +37,19 @@ test('persistência, importação atômica, histórico, isolamento por competên
  assert.equal((await loadData('2026-08')).stale,true);
  const versions=await db.query('SELECT id FROM mega_imports WHERE company_id=$1 AND period=$2',['01','2026-08']);assert.equal(versions.length,2);
  await saveCompany({id:'01',name:'Matriz de teste',uf:'SP',cnpj:''},'teste');assert.equal((await loadData('2026-08')).companies[0].uf,'SP');
+ await setPeriodDeclaration({companyId:'05',period:'2026-08',noMovement:true,reason:'Ausência de movimento confirmada no teste.'},'teste');
+ assert.equal((await loadData('2026-08')).declarations?.length,1);
+ assert.equal((await loadData('2026-07')).declarations?.length,0);
+ assert.equal((await processPeriod('2026-08','teste')).alerts.some(a=>a.kind==='cobertura'&&a.companyId==='05'),false);
+ await assert.rejects(()=>importFiles([item('05')],'teste'),/Reabra o movimento/);
+ await assert.rejects(()=>setPeriodDeclaration({companyId:'01',period:'2026-08',noMovement:true,reason:'Tentativa de ocultar movimento existente.'},'teste'),/Há lançamentos/);
+ await setPeriodDeclaration({companyId:'05',period:'2026-08',noMovement:false,reason:'Reabertura de movimento confirmada no teste.'},'teste');
+ assert.equal((await loadData('2026-08')).stale,true);
+ await importFiles([item('05')],'teste');
+ await setPeriodDeclaration({companyId:'04',period:'2026-09',noMovement:true,reason:'Ausência de movimento em setembro.'},'teste');
+ const emptySnapshot=await processPeriod('2026-09','teste');assert.equal(emptySnapshot.entries.length,0);assert.equal(emptySnapshot.declarations?.length,1);
+ assert.equal(emptySnapshot.alerts.filter(a=>a.kind==='cobertura').length,5);
+ await assert.rejects(()=>saveCompany({id:'01',name:'Matriz de teste',uf:'SP',cnpj:'11111111111111'},'teste'));
  const session=await login('teste@local.test','senha-de-teste-segura');assert.equal(session.status,200);
  const req=new Request('http://127.0.0.1:3000',{headers:{cookie:'mega_session='+session.token}});
  assert.equal(await requireAuth(req),'teste@local.test');

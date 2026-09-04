@@ -14,14 +14,14 @@ pnpm dev
 
 Abra http://127.0.0.1:3000. O sistema começa na demonstração, que é somente leitura e contém exclusivamente dados fictícios. Para acessar o ambiente real, consulte o arquivo local **ACESSO-LOCAL.txt**. O comando de setup nunca sobrescreve credenciais existentes.
 
-Os dados reais começam vazios. Nenhuma regra de demonstração é copiada para o banco real. O banco local fica em `.data/postgres-local`; não o abra simultaneamente em vários processos. Pare a aplicação antes de executar `pnpm db:migrate` localmente. Em produção, as conexões concorrentes usam PostgreSQL externo.
+Os dados reais começam vazios. Nenhuma regra de demonstração é copiada para o banco real. Os testes verificam o funcionamento técnico do motor; não validam juridicamente os critérios fiscais. No Windows, o banco local fica em `%LOCALAPPDATA%/MegaG-Auditor/postgres`, fora de pastas sincronizadas; em outros sistemas, em `.data/postgres-local`. O caminho pode ser definido em `LOCAL_DATABASE_PATH`; não o abra simultaneamente em vários processos. Pare a aplicação antes de executar `pnpm db:migrate` localmente. Em produção, as conexões concorrentes usam PostgreSQL externo.
 
 ## Fluxo mensal
 
 1. Acesse o ambiente real e confirme os nomes, UFs e CNPJs das seis empresas.
 2. Selecione a competência. Envie os seis arquivos **ApuIcms.txt** de uma vez, ou em lotes menores. Confira o mapeamento da empresa.
-3. Confirme, quando aplicável, que a coluna “Imposto Creditado” nas saídas representa débito. Sem confirmação, o débito e o saldo ficam pendentes.
-4. Para arquivo contendo apenas cabeçalho, confirme explicitamente “sem movimento”. Não basta o arquivo estar vazio.
+3. O importador reconhece “Imposto Creditado” nas entradas e “Imposto Debitado” nas saídas, incluindo cabeçalhos separados ou as duas colunas. Confirme manualmente apenas quando o cabeçalho divergir do sentido da operação. Valores sem mapeamento confirmado não entram no crédito/débito e deixam o saldo pendente.
+4. Para empresa sem movimento, registre a declaração na cobertura da competência, com motivo. Ela vale somente naquele mês e impede importações com valores até a reabertura. Também é possível confirmar um arquivo contendo apenas cabeçalho.
 5. Clique em **Validar arquivos**, depois **Importar no banco**. O lote é atômico: uma linha inválida bloqueia todos os arquivos daquele lote.
 6. Clique em **Processar competência**. O processamento salva uma versão do resultado, incluindo fontes, cadastros e regras utilizadas.
 7. Revise a Central de Auditoria e cadastre critérios fiscais validados. Reprocesse para aplicar alterações.
@@ -32,9 +32,9 @@ Importações idênticas são idempotentes. Arquivo diferente exige marcar subst
 
 ## Relatórios encontrados e compatibilidade
 
-O importador foi validado por leitura dos seis ApuIcms de agosto/2026 encontrados no projeto: **30, 53, 6, 0, 23 e 28 linhas**, respectivamente. Os hashes antes e depois da validação coincidiram. Os originais não foram alterados nem automaticamente importados.
+O importador foi validado por leitura das amostras locais de ApuIcms. Os hashes antes e depois da validação coincidiram. Os originais não foram alterados nem automaticamente importados.
 
-- Layout: `CFOP;Valor Contábil;Base de Cálculo;Imposto Creditado;Isentas ou Não tributadas;Outras`.
+- Layout: CFOP, Valor Contábil, Base de Cálculo, Imposto Creditado e/ou Imposto Debitado, Isentas ou Não tributadas e Outras. Separador: ponto e vírgula.
 - Codificações UTF-8 e Windows-1252. Valores brasileiros são convertidos diretamente para centavos inteiros.
 - Cada valor preserva empresa, competência, número da linha, texto original, importação e hash SHA-256.
 - LivroApu e OperInterUF são complementares e bloqueados como fonte principal para evitar dupla contagem. A reconciliação desses relatórios complementares fica para a próxima etapa.
@@ -49,10 +49,10 @@ O importador foi validado por leitura dos seis ApuIcms de agosto/2026 encontrado
 - A classificação de tributadas/isentas/ST/outras se aplica ao valor inteiro da linha por regra. Não se presume ST pelo CFOP, nem se usa base de cálculo como valor de operação tributada. CFOP com tratamentos mistos deve permanecer em Revisar até obter detalhe.
 - O saldo exibido é **débito confirmado menos crédito informado nos arquivos**; não é a apuração fiscal completa. Não inclui saldo credor anterior, ajustes, estornos ou outros créditos/débitos que não constam na fonte.
 - A análise de crédito não aproveitado aponta a combinação configurada (base positiva/crédito zero); nunca calcula crédito presumido.
-- Transferências só participam do cruzamento quando a regra identifica essa natureza. Conferido exige uma entrada e uma saída, mesma chave válida, empresas distintas e recíprocas e valores contábeis iguais. Desdobramentos, duplicidades e ausência de contraparte exigem revisão. Conferência documental não valida tratamento tributário.
+- Transferências são identificadas por catálogo público de natureza de CFOP ou por regra cadastrada, mesmo quando o relatório é agregado. O catálogo inicial cobre 1152/2152/5152/6152 e 1409/2409/5409/6409; outros códigos podem ser cadastrados no motor. O catálogo não atribui categoria fiscal ou permissão de crédito. A auditoria por CFOP confere regras e coerência interna/interestadual quando as UFs e contrapartes estão disponíveis. A conciliação documental exige uma entrada e uma saída, mesma chave, empresas distintas e recíprocas, valores iguais e par de CFOPs permitido nas duas regras. Pendências, desdobramentos e duplicidades ficam em Revisar.
 - Sem chave, não se declara “Não encontrado”; registra-se “Revisar — sem chave”. “Não encontrado” exige uma chave presente em apenas um lado.
 - O consolidado é bruto, sem eliminação automática de operações entre empresas.
-- UFs e CNPJs não foram inferidos a partir das siglas dos arquivos. Uma filial fora do estado deve ter sua UF confirmada no cadastro.
+- UFs e CNPJs não foram inferidos a partir das siglas dos arquivos. Cadastros podem ser extraídos dos registros 0140 do EFD, com razão social, CNPJ, UF, hash da fonte e linha original. O arquivo de origem permanece privado; nenhum cadastro real é incorporado ao código.
 
 ## Segurança e persistência
 
@@ -68,9 +68,9 @@ O importador foi validado por leitura dos seis ApuIcms de agosto/2026 encontrado
 
 ## Preparação para Vercel e GitHub
 
-O repositório contém configuração Vercel e integração contínua GitHub Actions. Não foi feito push ou deploy remoto automaticamente.
+O repositório contém configuração Vercel e integração contínua GitHub Actions. O banco e os segredos devem ser configurados separadamente em cada ambiente.
 
-1. Crie/conecte um repositório privado no GitHub e envie somente o código versionado.
+1. Conecte o repositório GitHub escolhido e envie somente o código versionado. Cadastros, arquivos fiscais e credenciais permanecem fora do Git.
 2. Crie um banco PostgreSQL gerenciado com TLS e backups. Use URL com pool compatível com o provedor.
 3. Importe o repositório na Vercel como Next.js, com Node.js 22 ou 24.
 4. Configure **DATABASE_URL**, **ADMIN_EMAIL**, **ADMIN_PASSWORD_HASH**, **DATA_ENCRYPTION_KEY** e **APP_ORIGIN** com a URL HTTPS exata da aplicação. Gere credenciais próprias de produção; não publique o arquivo local.
@@ -94,7 +94,7 @@ node scripts/http-check.mjs
 node scripts/integration-http.mjs
 ```
 
-- Testes de parsing, precisão, vigência, sobreposição, créditos e cruzamento NF-e.
+- Testes de parsing de crédito/débito, precisão, cadastros 0140, vigência, sobreposição, créditos, CFOPs e cruzamento NF-e.
 - Banco de testes isolado: atomicidade, duplicidade, histórico, autenticação, criptografia e separação de competências.
 - Teste de durabilidade local: encerramento abrupto e reabertura em outro processo.
 - A verificação HTTP usa a instância local ativa, autentica e encerra uma sessão, confirma que o banco real está vazio na instalação inicial e valida exportações fictícias. Não cria dados fiscais reais.
@@ -103,3 +103,7 @@ node scripts/integration-http.mjs
 - Exportações fictícias de QA ficam em `.data/qa`.
 
 Próximas etapas: validar a amostra detalhada Consinco, reconciliar LivroApu/OperInterUF, ampliar perfis e permissões, importar ajustes da apuração, adicionar processamento em fila e integrar PIS/COFINS.
+
+Referência do catálogo de natureza: [Tabela CFOP da SEFAZ/PE](https://www.sefaz.pe.gov.br/Legislacao/Tributaria/Documents/Legislacao/Tabelas/CFOP.htm). A vigência e o fundamento tributário devem ser validados no cadastro de regras.
+
+No Windows, o OneDrive pode marcar diretórios como somente leitura e impedir a reabertura do PostgreSQL incorporado. Mantenha o banco fora de pastas sincronizadas e faça backups com o banco fechado ou por exportação consistente. A pasta do código pode permanecer no OneDrive.

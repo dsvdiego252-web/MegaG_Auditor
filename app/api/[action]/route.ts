@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { demoData } from '@/lib/demo';
-import {loadData,importFiles,processPeriod,saveRule,saveCompany,periodSchema} from '@/lib/store';
+import {loadData,importFiles,processPeriod,saveRule,saveCompany,setPeriodDeclaration,periodSchema} from '@/lib/store';
 import {checkOrigin,requireAuth,login,logout,sessionCookie,HttpError,decrypt} from '@/lib/security';
 import {database} from '@/lib/db';
 import {parseReport,ImportError,MAX_FILE_BYTES} from '@/lib/parser';
@@ -49,7 +49,7 @@ export async function GET(req:Request,{params}:{params:Promise<{action:string}>}
     const data=demo?demoData(period):await loadData(period);
     if(action==='data') {
       // Nunca entregar linhas ainda não processadas: o dashboard representa uma versão explícita.
-      return json({demo:data.demo,companies:data.companies,rules:data.rules,imports:data.imports,snapshot:data.snapshot,stale:data.stale,periods:data.periods});
+      return json({demo:data.demo,companies:data.companies,rules:data.rules,imports:data.imports,snapshot:data.snapshot,stale:data.stale,periods:data.periods,declarations:data.declarations||[]});
     }
     if(!data.snapshot) throw new HttpError('Processe a competência antes de exportar.');
     const company=url.searchParams.get('company')||'all';
@@ -95,6 +95,7 @@ export async function POST(req:Request,{params}:{params:Promise<{action:string}>
     const body=await req.json();
     if(action==='process') return json({snapshot:await processPeriod(periodSchema.parse(body.period),actor)});
     if(action==='rules') return json(await saveRule(body,actor));
+    if(action==='period-status') return json(await setPeriodDeclaration(body,actor));
     if(action==='companies') return json(await saveCompany(body,actor));
     throw new HttpError('Rota não encontrada.',404);
   } catch(e){return fail(e);}

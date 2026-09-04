@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve,join } from 'node:path';
+import { homedir } from 'node:os';
 import { DEFAULT_COMPANIES } from './types';
 type Row = Record<string, unknown>;
 export type Connection = { query<T = Row>(sql: string, params?: unknown[]): Promise<T[]> };
@@ -21,7 +22,8 @@ async function initialize():Promise<Database> {
   } else {
     if(process.env.VERCEL || process.env.NODE_ENV==='production' && process.env.ALLOW_LOCAL_DATABASE!=='true') throw new Error('Configure DATABASE_URL para usar dados reais em produção.');
     const {PGlite}=await import('@electric-sql/pglite');
-    const directory=resolve(process.env.LOCAL_DATABASE_PATH||'.data/postgres-local');
+    const defaultDirectory=process.platform==='win32'?join(process.env.LOCALAPPDATA||join(homedir(),'AppData','Local'),'MegaG-Auditor','postgres'):'.data/postgres-local';
+    const directory=resolve(process.env.LOCAL_DATABASE_PATH||defaultDirectory);
     await mkdir(directory,{recursive:true});
     const pg=new PGlite(directory);
     await pg.waitReady;
@@ -37,6 +39,7 @@ async function initialize():Promise<Database> {
     'CREATE TABLE IF NOT EXISTS mega_imports (id text PRIMARY KEY, company_id text NOT NULL REFERENCES mega_companies(id), period text NOT NULL, active boolean NOT NULL DEFAULT true, payload jsonb NOT NULL, entries jsonb NOT NULL, source text NOT NULL)',
     'CREATE UNIQUE INDEX IF NOT EXISTS mega_active_import ON mega_imports(company_id,period) WHERE active',
     'CREATE INDEX IF NOT EXISTS mega_import_period ON mega_imports(period)',
+    'CREATE TABLE IF NOT EXISTS mega_period_declarations (company_id text NOT NULL REFERENCES mega_companies(id), period text NOT NULL, payload jsonb NOT NULL, PRIMARY KEY(company_id,period))',
     'CREATE TABLE IF NOT EXISTS mega_rules (id text PRIMARY KEY, payload jsonb NOT NULL)',
     'CREATE TABLE IF NOT EXISTS mega_snapshots (id text PRIMARY KEY, period text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), payload jsonb NOT NULL)',
     'CREATE INDEX IF NOT EXISTS mega_snapshot_period ON mega_snapshots(period,created_at DESC)',

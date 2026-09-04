@@ -44,7 +44,7 @@ test('chaves NF-e têm 44 dígitos e verificador validado',()=>{assert.equal(val
 test('transferência exige chave, lados opostos, empresas recíprocas e valores iguais',()=>{
  const incoming={...entry,key:key(),cfop:'1152',counterpart:'02'};
  const outgoing:Entry={...entry,id:'e2',key:key(),cfop:'5152',direction:'saida',companyId:'02',counterpart:'01'};
- const rules=[{...rule,cfop:'1152',operation:'transferencia' as const},{...rule,id:'r2',cfop:'5152',operation:'transferencia' as const}];
+ const rules=[{...rule,cfop:'1152',pairedCfops:['5152'],operation:'transferencia' as const},{...rule,id:'r2',cfop:'5152',pairedCfops:['1152'],operation:'transferencia' as const}];
  const a=(rows:Entry[])=>audit(rows,rules,companies).transfers;
  assert.equal(a([incoming,outgoing])[0].status,'Conferido');
  assert.equal(a([incoming])[0].status,'Não encontrado');
@@ -52,7 +52,10 @@ test('transferência exige chave, lados opostos, empresas recíprocas e valores 
  assert.equal(a([incoming,{...outgoing,counterpart:undefined}])[0].status,'Revisar');
  assert.equal(a([incoming,outgoing,{...outgoing,id:'e3'}])[0].status,'Revisar');
  assert.equal(a([{...incoming,key:undefined}])[0].status,'Revisar');
- assert.equal(audit([incoming],[],companies).transfers.length,0);
+ assert.equal(audit([incoming],[],companies).transfers.length,1);
+ assert.equal(audit([incoming],[],companies).entries[0].category,'revisar');
+ assert.equal(audit([incoming,outgoing],rules.map(r=>({...r,pairedCfops:[]})),companies).transfers[0].status,'Revisar');
+ assert.equal(audit([incoming,outgoing],rules,companies.map(c=>({...c,uf:c.id==='02'?'MG':'SP'}))).transfers[0].status,'Revisar');
 });
 test('data fora da competência e chave inválida bloqueiam importação detalhada',()=>{
  assert.throws(()=>parse(header+';Data\n1102;1,00;1,00;0,12;0,00;0,00;2026-09-01'),/fora da competência/);
