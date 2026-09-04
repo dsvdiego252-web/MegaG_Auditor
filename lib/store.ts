@@ -5,6 +5,7 @@ import { hash,encrypt,HttpError } from './security';
 import { parseReport } from './parser';
 import { audit } from './audit';
 import { validCnpj } from './registration';
+import type {TaxRule,TaxPackage} from './tax-motor';
 import type {AppData,Company,Entry,ImportRecord,Rule,Snapshot,TaxMode,PeriodDeclaration} from './types';
 export const periodSchema=z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 export const ruleSchema=z.object({
@@ -18,17 +19,19 @@ export const ruleSchema=z.object({
   reason:z.string().trim().min(15).max(2000),reference:z.string().trim().min(5).max(1000),active:z.boolean()
 }).refine(r=>!r.end||r.end>=r.start,{message:'Fim da vigência anterior ao início.'})
 .refine(r=>!r.expectCredit||r.credit==='permitir',{message:'Crédito esperado só é compatível com permitir crédito.'});
-export const companySchema=z.object({id:z.string().regex(/^0[1-6]$/),name:z.string().trim().min(2).max(80),uf:ruleSchema.shape.uf,cnpj:z.string().refine(v=>!v||validCnpj(v),{message:'CNPJ inválido.'}),legalName:z.string().trim().min(2).max(160).optional(),registrationSource:z.object({filename:z.string().max(200),sha256:z.string().regex(/^[a-f0-9]{64}$/),line:z.number().int().positive()}).optional()});
+export const companySchema=z.object({id:z.string().regex(/^0[1-6]$/),name:z.string().trim().min(2).max(80),uf:ruleSchema.shape.uf,cnpj:z.string().refine(v=>!v||validCnpj(v),{message:'CNPJ inválido.'}),legalName:z.string().trim().min(2).max(160).optional(),cnae:z.string().regex(/^$|^\d{7}$/).optional(),regime:z.string().trim().max(80).optional(),registrationSource:z.object({filename:z.string().max(200),sha256:z.string().regex(/^[a-f0-9]{64}$/),line:z.number().int().positive()}).optional()});
 async function payloads<T>(db:Connection,sql:string,params:unknown[]=[]) {return (await db.query<{payload:T}>(sql,params)).map(r=>r.payload);}
 export async function inputs(db:Connection,period:string) {
   const companies=await payloads<Company>(db,'SELECT payload FROM mega_companies ORDER BY id');
   const rules=await payloads<Rule>(db,'SELECT payload FROM mega_rules ORDER BY id');
+  const taxRules=await payloads<TaxRule>(db,'SELECT payload FROM mega_tax_rules ORDER BY id');
+  const taxPackages=await payloads<TaxPackage>(db,'SELECT payload FROM mega_tax_packages ORDER BY id');
   const records=await db.query<{payload:ImportRecord;entries:Entry[]}>('SELECT payload,entries FROM mega_imports WHERE active AND period=$1 ORDER BY company_id',[period]);
   const declarations=await payloads<PeriodDeclaration>(db,'SELECT payload FROM mega_period_declarations WHERE period=$1 ORDER BY company_id',[period]);
-  return {companies,rules,declarations,imports:records.map(r=>r.payload),entries:records.flatMap(r=>r.entries)};
+  return {companies,rules,taxRules,taxPackages,declarations,imports:records.map(r=>r.payload),entries:records.flatMap(r=>r.entries)};
 }
-export function fingerprints(data:{companies:Company[];rules:Rule[];imports:ImportRecord[];declarations?:PeriodDeclaration[]}) {
-  return {inputFingerprint:hash(JSON.stringify([data.imports.map(i=>i.id),data.declarations||[]])),ruleFingerprint:hash(JSON.stringify(['audit-v3',data.companies,data.rules]))};
+export function fingerprints(data:{companies:Company[];rules:Rule[];taxRules?:TaxRule[];imports:ImportRecord[];declarations?:PeriodDeclaration[]}) {
+  return {inputFingerprint:hash(JSON.stringify([data.imports.map(i=>i.id),data.declarations||[]])),ruleFingerprint:hash(JSON.stringify(['audit-v4',data.companies,data.rules,data.taxRules||[]]))};
 }
 export async function loadData(period:string):Promise<AppData> {
   const db=await database();
@@ -90,9 +93,9 @@ export async function processPeriod(period:string,actor:string) {
     await lock(tx);
     const data=await inputs(tx,period);
     if(!data.imports.length&&!data.declarations.length) throw new HttpError('Importe os relatórios ou declare as empresas sem movimento antes de processar.');
-    const result=audit(data.entries,data.rules,data.companies);
+    const result=audit(data.entries,data.rules,data.companies,data.taxRules);
     for(const c of data.companies) if(!data.imports.some(i=>i.companyId===c.id)&&!data.declarations.some(d=>d.companyId===c.id)) result.alerts.unshift({id:'missing:'+c.id,companyId:c.id,priority:'alta',kind:'cobertura',title:'Empresa sem relatório',reason:c.name+': competência incompleta. Importe o relatório ou arquivo sem movimento confirmado.'});
-    const snapshot:Snapshot={id:randomUUID(),period,processedAt:new Date().toISOString(),...result,rules:data.rules,imports:data.imports,companies:data.companies,declarations:data.declarations,...fingerprints(data)};
+    const snapshot:Snapshot={id:randomUUID(),period,processedAt:new Date().toISOString(),...result,rules:data.rules,taxRules:data.taxRules,taxPackages:data.taxPackages,imports:data.imports,companies:data.companies,declarations:data.declarations,...fingerprints(data)};
     if(Buffer.byteLength(JSON.stringify(snapshot),'utf8')>3_500_000) throw new HttpError('O resultado excede o limite desta versão. Utilize os relatórios resumidos por CFOP; grandes volumes detalhados exigem processamento em fila e paginação.',413);
     await tx.query('INSERT INTO mega_snapshots(id,period,payload) VALUES ($1,$2,$3::jsonb)',[snapshot.id,period,JSON.stringify(snapshot)]);
     await recordEvent(tx,actor,'processar',{snapshotId:snapshot.id,period,imports:data.imports.map(i=>i.id),alerts:result.alerts.length});

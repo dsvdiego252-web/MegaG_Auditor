@@ -5,6 +5,8 @@ import { demoData } from '@/lib/demo';
 import {loadData,importFiles,processPeriod,saveRule,saveCompany,setPeriodDeclaration,periodSchema} from '@/lib/store';
 import {checkOrigin,requireAuth,login,logout,sessionCookie,HttpError,decrypt} from '@/lib/security';
 import {database} from '@/lib/db';
+import {importTaxPackage,saveTaxRule} from '@/lib/tax-store';
+import type {TaxPackage} from '@/lib/tax-motor';
 import {databaseDiagnostic} from '@/lib/db-diagnostics';
 import {parseReport,ImportError,MAX_FILE_BYTES} from '@/lib/parser';
 import {excelExport,reportExport} from '@/lib/export';
@@ -40,6 +42,15 @@ export async function GET(req:Request,{params}:{params:Promise<{action:string}>}
     const demo=url.searchParams.get('mode')==='demo';
     if(!demo) await requireAuth(req);
     if(action==='session') return json({authenticated:!demo});
+    if(action==='tax-source'||action==='tax-history') {
+      if(demo) throw new HttpError('O motor real exige autenticação.',401);
+      const id=z.string().uuid().parse(url.searchParams.get('id'));
+      const db=await database();
+      if(action==='tax-history')return json((await db.query<{payload:unknown}>('SELECT payload FROM mega_tax_revisions WHERE rule_id=$1 ORDER BY version DESC LIMIT 50',[id])).map(r=>r.payload));
+      const [row]=await db.query<{source:string;payload:TaxPackage}>('SELECT source,payload FROM mega_tax_packages WHERE id=$1',[id]);
+      if(!row)throw new HttpError('Pacote não encontrado.',404);
+      return new Response(new Uint8Array(decrypt(row.source)),{headers:{'Content-Type':'application/json; charset=utf-8','Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(row.payload.filename),'Cache-Control':'no-store'}});
+    }
     if(action==='source') {
       if(demo) throw new HttpError('A demonstração não contém arquivos reais.',404);
       const [row]=await (await database()).query<{source:string;payload:ImportRecord}>('SELECT source,payload FROM mega_imports WHERE id=$1',[url.searchParams.get('id')||'']);
@@ -55,7 +66,7 @@ export async function GET(req:Request,{params}:{params:Promise<{action:string}>}
     const data=demo?demoData(period):await loadData(period);
     if(action==='data') {
       // Nunca entregar linhas ainda não processadas: o dashboard representa uma versão explícita.
-      return json({demo:data.demo,companies:data.companies,rules:data.rules,imports:data.imports,snapshot:data.snapshot,stale:data.stale,periods:data.periods,declarations:data.declarations||[]});
+      return json({demo:data.demo,companies:data.companies,rules:data.rules,taxRules:data.taxRules||[],taxPackages:data.taxPackages||[],imports:data.imports,snapshot:data.snapshot,stale:data.stale,periods:data.periods,declarations:data.declarations||[]});
     }
     if(!data.snapshot) throw new HttpError('Processe a competência antes de exportar.');
     const company=url.searchParams.get('company')||'all';
@@ -71,7 +82,7 @@ export async function POST(req:Request,{params}:{params:Promise<{action:string}>
     const {action}=await params;
     const contentLength=Number(req.headers.get('content-length')||0);
     if(contentLength>4_000_000) throw new HttpError('O lote excede 4 MB. Importe em lotes menores.',413);
-    req=await boundedRequest(req,action==='login'?4096:action==='import'||action==='preview'?4_000_000:20_000);
+    req=await boundedRequest(req,action==='login'?4096:action==='tax-package'?270_000:action==='tax-rule'?64_000:action==='import'||action==='preview'?4_000_000:20_000);
     if(action==='login') {
       const {email,password}=z.object({email:z.string().email().max(200),password:z.string().min(1).max(200)}).parse(await req.json());
       const result=await login(email,password);
@@ -81,6 +92,11 @@ export async function POST(req:Request,{params}:{params:Promise<{action:string}>
     await requireAuth(req);
     if(action==='logout') {await logout(req);return NextResponse.json({ok:true},{headers:{'Set-Cookie':sessionCookie('',0)}});}
     const actor=process.env.ADMIN_EMAIL||'admin';
+    if(action==='tax-package') {
+      const form=await req.formData(),file=form.get('file');
+      if(!(file instanceof File)||file.size>256_000)throw new HttpError('Envie o pacote JSON de até 256 KB.',422);
+      return json(await importTaxPackage(new Uint8Array(await file.arrayBuffer()),file.name,actor));
+    }
     if(action==='preview'||action==='import') {
       const form=await req.formData();
       const files=form.getAll('files');
@@ -101,6 +117,7 @@ export async function POST(req:Request,{params}:{params:Promise<{action:string}>
     const body=await req.json();
     if(action==='process') return json({snapshot:await processPeriod(periodSchema.parse(body.period),actor)});
     if(action==='rules') return json(await saveRule(body,actor));
+    if(action==='tax-rule') return json(await saveTaxRule(body,actor));
     if(action==='period-status') return json(await setPeriodDeclaration(body,actor));
     if(action==='companies') return json(await saveCompany(body,actor));
     throw new HttpError('Rota não encontrada.',404);

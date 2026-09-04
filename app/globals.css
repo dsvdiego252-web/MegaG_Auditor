@@ -12,3 +12,51 @@ small,.badge,.panel-note,.eyebrow,.footer,.nav-label,.phase-card p,.panel-footer
 .period-brief p,.page-heading p,.alert-copy p{font-size:15px}
 table th{font-size:13px}.legend button>small,td small,.donut small,.donut span,.kpi>span,.company-row small,.rule-list small{font-size:12px}
 @media(max-width:650px){html{font-size:16px}.composition-body{flex-direction:column}.donut{width:175px;height:175px}.legend{width:100%}.kpi>strong{font-size:23px}.kpi-label{font-size:13px}.page-heading h1{font-size:26px}.brief-title{font-size:15px}.sidebar nav button{padding-inline:8px}.filter-bar label{width:100%}.filter-bar input,.filter-bar select{max-width:100%;width:100%}.topbar .breadcrumb{font-size:12px}.top-actions .mode-switch{font-size:12px}.detail-body .stats-three{grid-template-columns:1fr}}
+/* Motor tributário: catálogo e edição de critérios */
+.motor-panel h2{display:flex;align-items:center;gap:10px}
+.motor-upload{position:relative;cursor:pointer;white-space:nowrap}
+.motor-upload input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.motor-upload.disabled{opacity:.5;cursor:default}
+.motor-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:0 24px 22px}
+.motor-stats>div{background:#f4f8f7;border:1px solid #e2ece8;border-radius:12px;padding:20px}
+.motor-stats strong{display:block;font-size:29px;color:#1d6d5d}
+.motor-stats span{font-size:12px;color:#6e858a}
+.motor-panel>.notice,.motor-panel>.motor-source{margin:0 24px 22px}
+.motor-source{border:1px solid #e0e8ed;border-radius:9px;background:#fafcfc;padding:12px 16px}
+.motor-source summary{font-size:13px;color:#486770;cursor:pointer;font-weight:600}
+.motor-source pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:330px;overflow:auto;font-size:12px;line-height:1.65;color:#3a5660}
+.motor-source article+article{border-top:1px solid #e2e9eb;padding-top:14px;margin-top:14px}
+.motor-source .hash{display:block;overflow-wrap:anywhere}
+.motor-filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin:0 24px 22px}
+.motor-filters label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:#57717e}
+.motor-filters label>span{display:flex;align-items:center;gap:6px}
+.motor-filters input,.motor-filters select{padding:11px 12px;border:1px solid #dbe4e9;border-radius:7px;min-width:0;background:#fff;color:#233f4a}
+.motor-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0 24px}
+.motor-list>article{border:1px solid #e2e9ed;border-radius:12px;padding:18px;min-width:0}
+.motor-list h3{margin:15px 0 7px;font-size:16px;line-height:1.5}
+.motor-list p{font-size:13px;color:#6b7f8b;line-height:1.6;margin:0 0 10px;overflow-wrap:anywhere}
+.motor-list small{color:#81929e;font-size:11px}
+.motor-list .motor-source{margin-top:13px}
+.motor-record-heading{display:flex;justify-content:space-between;gap:10px;align-items:start;flex-wrap:wrap}
+.motor-record-heading>div{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.motor-record-heading .button{font-size:11px;padding:7px 10px}
+.motor-pagination{display:flex;gap:10px;align-items:center;padding:22px 24px;flex-wrap:wrap}
+.motor-pagination span{margin-right:auto;font-size:12px;color:#7e919c}
+.motor-section-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}
+.motor-section-title h3{margin:0;font-size:16px}
+.motor-condition{display:grid;grid-template-columns:1.25fr 1fr 1.3fr 30px;gap:10px;align-items:end}
+.motor-condition .icon-button{margin-bottom:8px}
+.motor-condition label{min-width:0;font-size:12px}
+.motor-check{border:1px solid #dce7e5;border-radius:10px;display:grid;gap:14px;padding:18px;margin:0;min-width:0}
+.motor-check legend{padding:0 8px;color:#52756c;font-size:13px}
+.motor-required{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:15px}
+.motor-required .check-label{font-size:12px}
+.motor-evidence{margin:24px 0}
+.motor-evidence article{border:1px solid #dae6e2;background:#f7faf8;border-radius:10px;margin-top:12px;padding:18px}
+.motor-evidence h4{margin:0 0 10px;font-size:14px}
+.motor-evidence p{font-size:13px;line-height:1.7}
+.motor-evidence dl{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.motor-evidence dt,.motor-evidence small{font-size:11px;color:#7b9396}
+.motor-evidence dd{font-size:13px;margin:4px 0;overflow-wrap:anywhere}
+@media(max-width:1000px){.motor-list{grid-template-columns:1fr}.motor-filters{grid-template-columns:1fr 1fr}.motor-filters>label:first-child{grid-column:1/-1}}
+@media(max-width:620px){.motor-stats{gap:8px;margin:0 14px 16px}.motor-stats>div{padding:12px}.motor-stats span{font-size:10px}.motor-stats strong{font-size:23px}.motor-list,.motor-filters{margin-left:14px;margin-right:14px}.motor-panel>.notice,.motor-panel>.motor-source{margin-left:14px;margin-right:14px}.motor-condition{grid-template-columns:1fr 1fr}.motor-required{grid-template-columns:1fr}.motor-condition .icon-button{justify-self:end}.motor-filters{grid-template-columns:1fr}.motor-panel .panel-heading{flex-wrap:wrap}.motor-evidence dl{grid-template-columns:1fr}}

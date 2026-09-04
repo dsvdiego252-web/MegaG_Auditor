@@ -1,7 +1,8 @@
 import type { Alert, Company, Entry, EvaluatedEntry, Rule, Transfer, TransferCfop, UfCheck } from './types';
 import {cfopScope} from './cfop';
 import {TRANSFER_CFOPS,TRANSFER_CATALOG_SOURCE} from './transfer-catalog';
-export function audit(entries:Entry[],rules:Rule[],companies:Company[]) {
+import {evaluateTaxRules,type TaxRule} from './tax-motor';
+export function audit(entries:Entry[],rules:Rule[],companies:Company[],taxRules:TaxRule[]=[]) {
   const alerts:Alert[]=[],transfers:Transfer[]=[];
   const add=(e:Entry,kind:string,title:string,reason:string,priority:'alta'|'media'|'baixa'='media')=>alerts.push({id:`${e.id}:${kind}`,entryId:e.id,companyId:e.companyId,priority,title,reason,amount:e.tax,kind});
   const evaluated:EvaluatedEntry[]=entries.map(e=>{
@@ -30,7 +31,9 @@ export function audit(entries:Entry[],rules:Rule[],companies:Company[]) {
     }
     if(!e.taxConfirmed){const reason='A coluna '+(e.taxLabel||'de imposto')+' não corresponde ao sentido '+e.direction+' do CFOP. Confirme o mapeamento para incluir o valor no crédito/débito e no saldo.';reasons.push(reason);add(e,'coluna','Mapeamento do ICMS pendente',reason,'alta');}
     if(e.amount<0||e.base<0||e.tax<0){const reason='Valor negativo na origem. Conferir estorno ou ajuste sem normalizar o sinal.';reasons.push(reason);add(e,'negativo','Valor negativo na origem',reason);}
-    return {...e,...(ufCheck?{ufCheck}:{}),category:rule?.category??'revisar',operation,ruleId:rule?.id,reasons,status:reasons.length?'Revisar':'Conferido'};
+    const taxFindings=evaluateTaxRules(e,company,taxRules);
+    for(const finding of taxFindings)if(finding.status!=='OK'){reasons.push(finding.reason);add(e,'motor:'+finding.ruleId,'Motor tributário: '+finding.title,finding.reason,finding.priority);}
+    return {...e,...(ufCheck?{ufCheck}:{}),...(taxFindings.length?{taxFindings}:{}),category:rule?.category??'revisar',operation,ruleId:rule?.id,reasons,status:reasons.length?'Revisar':'Conferido'};
   });
   const transferEntries=evaluated.filter(e=>e.operation==='transferencia');
   const byCfop=new Map<string,EvaluatedEntry[]>();
@@ -64,6 +67,8 @@ export function audit(entries:Entry[],rules:Rule[],companies:Company[]) {
   }
   for(const t of transfers.filter(t=>t.status!=='Conferido')){const e=evaluated.find(e=>e.id===t.entryIds[0])!;add(e,'transferencia',`Transferência: ${t.status.toLowerCase()}`,t.reason);}
   for(const company of companies)if(!company.uf)alerts.push({id:`uf:${company.id}`,companyId:company.id,priority:'media',title:'UF da empresa não confirmada',reason:'Confirme a UF no cadastro. Regras estaduais só se aplicam quando a UF corresponder exatamente.',kind:'cadastro'});
+  const pending=taxRules.filter(r=>r.domain==='ICMS'&&r.status==='pendente');
+  if(pending.length)alerts.push({id:'motor:pendentes',priority:'media',title:'Motor tributário: referências pendentes',reason:pending.length+' referências de ICMS aguardam critérios, vigência e validação em Regras fiscais. Percentuais e casos históricos ainda não produzem conclusões automáticas.',kind:'motor'});
   alerts.sort((a,b)=>({alta:0,media:1,baixa:2}[a.priority]-{alta:0,media:1,baixa:2}[b.priority]));
   return {entries:evaluated,alerts,transfers,transferCfops};
 }

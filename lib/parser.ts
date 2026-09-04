@@ -1,4 +1,5 @@
 import type { Entry, TaxMode } from './types';
+import type {TaxFacts,FactField} from './tax-motor';
 export const MAX_FILE_BYTES = 3_500_000;
 export const MAX_ROWS = 12000;
 export class ImportError extends Error { constructor(message: string, public lines: number[] = []) { super(message); } }
@@ -17,6 +18,30 @@ export function validNfeKey(key:string){
   let sum=0;
   for(let i=42,w=2;i>=0;i--,w=w===9?2:w+1)sum+=Number(key[i])*w;
   const check=11-sum%11;return Number(key[43])===(check>=10?0:check);
+}
+function fiscalFields(get:(name:string)=>string,headers:string[]):TaxFacts {
+  const fiscal:TaxFacts={};
+  const columns:[FactField,string[],RegExp|undefined][]=[
+    ['ncm',['ncm'],/^\d{8}$/],['cest',['cest'],/^\d{7}$/],['cstIcms',['csticms'],/^\d{2,3}$/],
+    ['csosn',['csosn'],/^\d{3}$/],['cbenef',['cbenef'],/^[A-Za-z0-9]{1,20}$/],
+    ['productDescription',['descricaoproduto','descricaodoproduto'],undefined],['cnae',['cnae'],/^\d{7}$/],
+    ['regime',['regimetributario'],undefined],['ufOrigem',['uforigem'],/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO|EX)$/],
+    ['ufDestino',['ufdestino'],/^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO|EX)$/]
+  ];
+  for(const [field,aliases,pattern] of columns){
+    const available=aliases.filter(a=>headers.includes(a));
+    if(available.length>1)throw new Error('Mais de uma coluna para '+field+'.');
+    const value=get(available[0]||aliases[0]);
+    if(!value)continue;
+    if(value.length>300||pattern&&!pattern.test(value))throw new Error('Campo fiscal '+field+' inválido. Preserve os códigos completos, incluindo zeros iniciais.');
+    fiscal[field]=value;
+  }
+  for(const [field,column] of [['icmsRate','aliquotaicms'],['mva','mva']] as const){
+    const value=get(column);if(!value)continue;
+    if(!/^\d+(?:,\d{1,4})?$/.test(value)||Number(value.replace(',','.'))>10000)throw new Error(column+': informe o percentual numérico com vírgula decimal, sem o símbolo %.');
+    fiscal[field]=Number(value.replace(',','.'));
+  }
+  return fiscal;
 }
 const REQUIRED=['cfop','valorcontabil','basedecalculo','isentasounaotributadas','outras'];
 function readHeader(line:string){
@@ -67,7 +92,8 @@ export function parseReport(buffer:Uint8Array,options:{companyId:string;period:s
       const counterpart=get('empresacontraparte');
       if(counterpart&&!/^0[1-6]$/.test(counterpart))throw new Error('Empresa contraparte deve ser um código de 01 a 06.');
       const taxConfirmed=nativeTax||options.taxMode==='por-direcao';
-      entries.push({id:options.importId+':'+(i+1),importId:options.importId,companyId:options.companyId,period:options.period,line:i+1,raw:lines[i],cfop,direction,amount:numbers[0],base:numbers[1],tax,exempt:numbers[2],other:numbers[3],taxConfirmed,taxLabel:taxColumn==='impostocreditado'?'Imposto Creditado':'Imposto Debitado',taxMapping:nativeTax?'cabecalho':options.taxMode==='por-direcao'?'confirmacao':'pendente',...(key?{key}:{}),...(date?{date}:{}),...(get('documento')?{document:get('documento')}:{}),...(counterpart?{counterpart}:{})});
+      const fiscal=fiscalFields(get,headers);
+      entries.push({id:options.importId+':'+(i+1),importId:options.importId,companyId:options.companyId,period:options.period,line:i+1,raw:lines[i],...(Object.keys(fiscal).length?{fiscal}:{}),cfop,direction,amount:numbers[0],base:numbers[1],tax,exempt:numbers[2],other:numbers[3],taxConfirmed,taxLabel:taxColumn==='impostocreditado'?'Imposto Creditado':'Imposto Debitado',taxMapping:nativeTax?'cabecalho':options.taxMode==='por-direcao'?'confirmacao':'pendente',...(key?{key}:{}),...(date?{date}:{}),...(get('documento')?{document:get('documento')}:{}),...(counterpart?{counterpart}:{})});
       if(entries.length>MAX_ROWS)throw new ImportError('Limite de '+MAX_ROWS+' linhas por relatório.');
     }catch(e){if(e instanceof ImportError)throw e;errorLines.push(i+1);errors.push('Linha '+(i+1)+': '+(e as Error).message);}
   }
