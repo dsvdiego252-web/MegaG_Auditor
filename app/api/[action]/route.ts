@@ -5,6 +5,7 @@ import { demoData } from '@/lib/demo';
 import {loadData,importFiles,processPeriod,saveRule,saveCompany,setPeriodDeclaration,periodSchema} from '@/lib/store';
 import {checkOrigin,requireAuth,login,logout,sessionCookie,HttpError,decrypt} from '@/lib/security';
 import {database} from '@/lib/db';
+import {databaseDiagnostic} from '@/lib/db-diagnostics';
 import {parseReport,ImportError,MAX_FILE_BYTES} from '@/lib/parser';
 import {excelExport,reportExport} from '@/lib/export';
 import type {ImportRecord} from '@/lib/types';
@@ -24,6 +25,11 @@ function fail(e:unknown) {
   if(e instanceof z.ZodError) return json({error:'Dados inválidos: '+e.issues.map(i=>i.path.join('.')+': '+i.message).join(' ')},400);
   if(e instanceof HttpError) return json({error:e.message},e.status);
   if(e instanceof ImportError) return json({error:e.message,lines:e.lines},422);
+  const diagnostic=databaseDiagnostic(e);
+  if(diagnostic) {
+    console.error('Mega G: falha de conexão com o banco',diagnostic.code);
+    return json({error:diagnostic.message+' Código: '+diagnostic.code+'.'},503);
+  }
   console.error('Mega G: falha de operação',e instanceof Error?e.name:'Unknown', e instanceof WebAssembly.RuntimeError ? e.message : '');
   return json({error:'Não foi possível concluir a operação. Verifique a configuração do banco e tente novamente.'},500);
 }
